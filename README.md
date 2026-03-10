@@ -1,6 +1,6 @@
 ## Ultra-High Speed Fourier Light Field Mesoscope 
 
-This will contain instructions for using the code repository associated withour new ultra-high speed fourier light field mesoscope for imaging snapping trap-jaw ants. 
+This will contain instructions for using the code repository associated with our new ultra-high speed fourier light field mesoscope.
 
 ## Environment and Installation 
 
