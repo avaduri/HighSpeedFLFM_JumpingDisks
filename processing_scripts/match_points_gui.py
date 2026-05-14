@@ -20,7 +20,7 @@ from qtpy.QtCore import Qt
 
 # specify specimen name
 # specimen_number = "20240506_OB_6"
-specimen_number = "20260409_B"
+specimen_number = "20260511_B"
 data_manager = MetadataManager(specimen_number=specimen_number)
 
 # specify if we're selecting alignment points or paint dots
