@@ -448,6 +448,13 @@ def detect_all_irregular_points(vertices_dict, expected_spacing, max_multiple=6,
             h_spacing, v_spacing = get_average_spacing(verts, expected_spacing=expected_spacing)
 
             # STEP 3: Organize points
+            # Add this guard:
+            verts = np.asarray(verts)
+            if verts.size == 0:
+                # nothing to do for this plane/camera
+                # optionally create empty entry to keep keys consistent:
+                all_irregulars[(plane_num, view_idx)] = []
+                continue
             rows = organize_by_axis(verts, axis=1, expected_spacing=v_spacing)
             cols = organize_by_axis(verts, axis=0, expected_spacing=h_spacing)
 

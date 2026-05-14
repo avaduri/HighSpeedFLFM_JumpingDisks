@@ -6,9 +6,12 @@ from hsflfm.util import display_with_points
 
 
 # take a bunch of lines and condense them to a set of vertical and horizontal lines
-def condense_lines(lines, angle_thresh=0.05, r_thresh=80):
+def condense_lines(lines, angle_thresh=0.05, r_thresh=20):
+
+
     if lines is None:
         return {"horizontal": [], "vertical": []}
+
     for i in range(lines.shape[0]):
         if abs(lines[i, :, 1] - np.pi) < angle_thresh:
             lines[i, :, 1] = lines[i, :, 1] - np.pi
@@ -19,6 +22,10 @@ def condense_lines(lines, angle_thresh=0.05, r_thresh=80):
     lines_dict = {}
 
     for direction, angle in angle_dict.items():
+
+        # --- BEFORE angle filtering ---
+        angle_mask = abs(lines[:, :, 1] - angle) < angle_thresh
+
         line_group = np.asarray(
             lines[np.where(abs(lines[:, :, 1] - angle) < angle_thresh)]
         )
@@ -44,6 +51,7 @@ def condense_lines(lines, angle_thresh=0.05, r_thresh=80):
             ]
             entry = np.mean(close_entries, axis=0)
             new_line_group.append([entry.tolist()])
+
         lines_dict[direction] = np.asarray(new_line_group).squeeze()
 
     # this looks like something we should read more later:
@@ -65,20 +73,95 @@ def make_binary_image(image, threshold_values):
 
     return blurred
 
+# --- REPLACEMENT get_line_intersect ---
+
+def _to_rho_theta(line):
+    """
+    Normalize several OpenCV Hough output formats into (rho, theta) floats.
+    Accepts:
+      - iterable-like [rho, theta] (shape (2,))
+      - nested arrays like [[rho, theta]] or (N,1,2)
+      - probabilistic line (x1,y1,x2,y2)
+    Returns:
+      (rho, theta) as floats
+    Raises:
+      ValueError if the format is not interpretable.
+    """
+    a = np.asarray(line)
+
+    # scalar (bad)
+    if a.ndim == 0:
+        raise ValueError("Scalar encountered, cannot interpret as (rho,theta)")
+
+    # If it already flattens to 2 values (rho,theta)
+    if a.size == 2:
+        r, t = a.ravel()[:2]
+        return float(r), float(t)
+
+    # If it's (x1,y1,x2,y2) from HoughLinesP or similar
+    if a.size >= 4 and (a.shape[-1] == 4 or a.size == 4):
+        flat = a.ravel()[:4]
+        x1, y1, x2, y2 = map(float, flat)
+        dx = x2 - x1
+        dy = y2 - y1
+        theta_dir = np.arctan2(dy, dx)           # direction angle of segment
+        phi = theta_dir + np.pi / 2.0            # normal angle
+        rho = x1 * np.cos(phi) + y1 * np.sin(phi)
+        return float(rho), float(phi)
+
+    # If nested and last dim >=2: reshape and take first two
+    if a.ndim >= 2:
+        lastdim = a.shape[-1]
+        if lastdim >= 2:
+            flat = a.reshape(-1, lastdim)
+            r, t = flat[0, 0], flat[0, 1]
+            return float(r), float(t)
+
+    raise ValueError(f"Unrecognized line format: shape={a.shape}, size={a.size}")
+
 
 def get_line_intersect(line1, line2):
-    """Finds the intersection of two lines given in Hesse normal form.
-
-    Returns closest integer pixel locations.
-    See https://stackoverflow.com/a/383527/5087436
     """
-    rho1, theta1 = line1  # [0]
-    rho2, theta2 = line2  # [0]
-    A = np.array([[np.cos(theta1), np.sin(theta1)], [np.cos(theta2), np.sin(theta2)]])
-    b = np.array([[rho1], [rho2]])
-    x0, y0 = np.linalg.solve(A, b)
-    # x0, y0 = int(np.round(x0)), int(np.round(y0))
-    return [x0, y0]
+    Compute intersection xy of two lines in a tolerant way.
+    Accepts polar (rho,theta) or cartesian (x1,y1,x2,y2) input forms.
+    Returns np.array([x, y]) or np.array([np.nan, np.nan]) if lines cannot be parsed or are parallel.
+    """
+    try:
+        rho1, theta1 = _to_rho_theta(line1)
+        rho2, theta2 = _to_rho_theta(line2)
+    except Exception:
+        # could not parse one or both lines -> return NaN intersection (no crash)
+        return np.array([np.nan, np.nan])
+
+    # Solve linear system in Hesse normal form
+    A = np.array([[np.cos(theta1), np.sin(theta1)],
+                  [np.cos(theta2), np.sin(theta2)]], dtype=float)
+    b = np.array([rho1, rho2], dtype=float)
+
+    try:
+        xy = np.linalg.solve(A, b)
+        return xy
+    except np.linalg.LinAlgError:
+        # parallel or singular
+        return np.array([np.nan, np.nan])
+# --- END replacement ---
+
+
+# def get_line_intersect(line1, line2):
+#     """Finds the intersection of two lines given in Hesse normal form.
+
+#     Returns closest integer pixel locations.
+#     See https://stackoverflow.com/a/383527/5087436
+#     """
+#     rho1, theta1 = line1  # [0]
+#     rho2, theta2 = line2  # [0]
+#     A = np.array([[np.cos(theta1), np.sin(theta1)], [np.cos(theta2), np.sin(theta2)]])
+#     b = np.array([[rho1], [rho2]])
+#     x0, y0 = np.linalg.solve(A, b)
+#     #x0, y0 = int(np.round(x0)), int(np.round(y0))
+#     #x0 = float(x0)
+#     #y0 = float(y0)
+#     return [x0, y0]
 
 
 def find_approx_points(lines_dict):
@@ -221,6 +304,206 @@ def get_line_crossing(left_point, right_point, intersect):
 
     return xi, yi
 
+# def get_lsf_esf(
+#     image,
+#     center_point,
+#     axis=0,
+#     avg_num=101,
+#     plot_range=75,
+#     show=True,
+#     return_indices=False,
+#     ignore_warning=False,
+# ):
+#     """
+#     Robust version of get_lsf_esf.
+
+#     Returns:
+#       - if return_indices True: (lsf, esf, xstart, xend, ystart, yend, subimage)
+#       - else: (lsf, esf, subimage)
+#     On failure returns the same sentinel as before:
+#       - return_indices True -> (-1, -1, -1, -1, -1, -1, subimage)  (or -1s with subimage)
+#       - return_indices False -> (-1, -1, subimage)
+#     This implementation avoids converting NaN to int and catches numeric failures.
+#     """
+
+#     # sentinel-producing helper (same shapes used previously)
+#     def _fail(return_indices_local):
+#         if return_indices_local:
+#             # keep subimage as -1 here to match original fail shape when no subimage
+#             return (-1, -1, -1, -1, -1, -1, -1)
+#         else:
+#             return -1, -1, -1
+
+#     # defensive: minimal checks on input
+#     try:
+#         if image is None or image.size == 0:
+#             return _fail(return_indices)
+
+#         # center_point must be length-2 and finite
+#         if center_point is None or len(center_point) < 2:
+#             return _fail(return_indices)
+#         # convert to floats and verify finite
+#         cx = float(center_point[0])
+#         cy = float(center_point[1])
+#         if not (np.isfinite(cx) and np.isfinite(cy)):
+#             return _fail(return_indices)
+#     except Exception:
+#         return _fail(return_indices)
+
+#     h, w = image.shape[:2]
+
+#     # quick near-edge rejection: require some minimal margin so windowing won't fail
+#     # use plot_range/avg_num to estimate required margin
+#     try:
+#         half_plot = int(max(1, float(plot_range) / 2.0))
+#         half_avg = int(max(1, float(avg_num) / 2.0))
+#     except Exception:
+#         return _fail(return_indices)
+
+#     # Minimum safe margin (pixels); if center lies inside this margin try smaller window later
+#     MIN_MARGIN = 2
+
+#     # If center is obviously out-of-bounds, fail early
+#     if (cx < 0 - MIN_MARGIN) or (cy < 0 - MIN_MARGIN) or (cx > w + MIN_MARGIN) or (cy > h + MIN_MARGIN):
+#         return _fail(return_indices)
+
+#     # Helper to compute clamped integer window indices safely
+#     def _clamped_indices(cx_f, cy_f, avg_n, plot_r):
+#         # axis=0 vs axis=1 differ in how indices are interpreted in original code
+#         if axis == 0:
+#             xstart = max(int(round(cy_f - avg_n / 2.0)), 0)
+#             xend = min(int(round(cy_f + avg_n / 2.0)), image.shape[0])
+#             ystart = max(int(round(cx_f - plot_r / 2.0)), 0)
+#             yend = min(int(round(cx_f + plot_r / 2.0)), image.shape[1])
+#         else:
+#             xstart = max(int(round(cy_f - plot_r / 2.0)), 0)
+#             xend = min(int(round(cy_f + plot_r / 2.0)), image.shape[0])
+#             ystart = max(int(round(cx_f - avg_n / 2.0)), 0)
+#             yend = min(int(round(cx_f + avg_n / 2.0)), image.shape[1])
+#         return xstart, xend, ystart, yend
+
+#     # compute primary window
+#     xstart, xend, ystart, yend = _clamped_indices(cx, cy, avg_num, plot_range)
+
+#     # If the window is empty (no pixels), optionally try a smaller window; otherwise fail
+#     if (xend <= xstart) or (yend <= ystart):
+#         # try a smaller window once to handle near-edge but still usable points
+#         try:
+#             small_plot = max(9, int(plot_range * 0.6))
+#             small_avg = max(9, int(avg_num * 0.6))
+#             xstart, xend, ystart, yend = _clamped_indices(cx, cy, small_avg, small_plot)
+#             if (xend <= xstart) or (yend <= ystart):
+#                 return _fail(return_indices)
+#         except Exception:
+#             return _fail(return_indices)
+
+#     # extract subimage safely
+#     try:
+#         subimage = image[xstart:xend, ystart:yend]
+#         # if subimage is empty, fail
+#         if subimage.size == 0:
+#             return _fail(return_indices)
+#     except Exception:
+#         return _fail(return_indices)
+
+#     # optional immediate show of subimage (keep original behaviour)
+#     if show:
+#         try:
+#             plt.figure()
+#             plt.imshow(subimage)
+#             plt.show()
+#         except Exception:
+#             pass
+
+#     # now the numeric processing; any failure returns sentinel
+#     try:
+#         # compute ESF and LSF robustly
+#         esf = np.mean(subimage, axis=axis)
+
+#         # protect if esf has no length
+#         if esf is None or getattr(esf, "size", 0) == 0:
+#             return _fail(return_indices)
+
+#         lsf = np.zeros(len(esf))
+#         if len(esf) >= 3:
+#             lsf[1:-1] = esf[2:] / 2.0 - esf[:-2] / 2.0
+#         else:
+#             # too small to compute lsf robustly
+#             return _fail(return_indices)
+
+#         # find lower-half and higher-half intersections as before,
+#         # but guard every step that can return invalid indices.
+#         # helper to call get_surrounding_indices safely
+#         def _safe_get_surrounding(arr, target):
+#             try:
+#                 return get_surrounding_indices(arr, target, ignore_warning)
+#             except Exception:
+#                 return -1, -1
+
+#         half_max_low = np.min(lsf) / 2.0
+#         min_idx_arr = np.where(lsf == np.min(lsf))[0]
+#         if min_idx_arr.size == 0:
+#             return _fail(return_indices)
+#         min_index = int(min_idx_arr[0])
+
+#         idx0, idx1 = _safe_get_surrounding(lsf[: min_index + 1], half_max_low)
+#         if idx0 == -1:
+#             return _fail(return_indices)
+#         intersect0 = get_line_crossing((idx0, lsf[idx0]), (idx1, lsf[idx1]), half_max_low)[0]
+
+#         idx0, idx1 = _safe_get_surrounding(lsf[min_index:], half_max_low)
+#         if idx0 == -1:
+#             return _fail(return_indices)
+#         idx0 = int(idx0) + min_index
+#         idx1 = int(idx1) + min_index
+#         intersect1 = get_line_crossing((idx0, lsf[idx0]), (idx1, lsf[idx1]), half_max_low)[0]
+
+#         half_max_high = np.max(lsf) / 2.0
+#         max_idx_arr = np.where(lsf == np.max(lsf))[0]
+#         if max_idx_arr.size == 0:
+#             return _fail(return_indices)
+#         max_index = int(max_idx_arr[0])
+
+#         idx0, idx1 = _safe_get_surrounding(lsf[: max_index + 1], half_max_high)
+#         if idx0 == -1:
+#             return _fail(return_indices)
+#         intersect2 = get_line_crossing((idx0, lsf[idx0]), (idx1, lsf[idx1]), half_max_high)[0]
+
+#         idx0, idx1 = _safe_get_surrounding(lsf[max_index:], half_max_high)
+#         if idx0 == -1:
+#             return _fail(return_indices)
+#         idx0 = int(idx0) + max_index
+#         idx1 = int(idx1) + max_index
+#         intersect3 = get_line_crossing((idx0, lsf[idx0]), (idx1, lsf[idx1]), half_max_high)[0]
+
+#     except Exception:
+#         # Any numeric error should not crash the pipeline.
+#         # Return sentinel to let calling code handle the failure.
+#         return _fail(return_indices)
+
+#     # optional plotting of esf/lsf (same as original)
+#     if show:
+#         try:
+#             plt.figure()
+#             plt.plot(esf - np.mean(esf), ".-", label="ESF")
+#             plt.plot(lsf, ".-", label="LSF")
+#             plt.legend()
+#             plt.title("ESF and LSF")
+#             plt.xlabel("Pixel Index")
+#             plt.axhline(y=np.max(lsf) / 2, color="r", linestyle="--")
+#             plt.axhline(y=np.min(lsf) / 2, color="r", linestyle="--")
+#             plt.axvline(x=intersect0, color="b", linestyle="--")
+#             plt.axvline(x=intersect1, color="b", linestyle="--")
+#             plt.axvline(x=intersect2, color="b", linestyle="--")
+#             plt.axvline(x=intersect3, color="b", linestyle="--")
+#             plt.show()
+#         except Exception:
+#             pass
+
+#     # return with same shapes as original
+#     if return_indices:
+#         return lsf, esf, xstart, xend, ystart, yend, subimage
+#     return lsf, esf, subimage
 
 def get_lsf_esf(
     image,
@@ -346,7 +629,19 @@ def get_lsf_esf(
 # this is an improvement on a previous function
 # which we might want to go back and change
 # TODO: don't always use default lsf_range
-def adjust_center(image, binary_image, center_point, axis, debug=False, lsf_range=150):
+def adjust_center(image, binary_image, center_point, axis, debug=False, lsf_range=150): 
+    # Changed lsf_range from 150 to new value- Abhinav 2/20
+    margin = int(lsf_range / 2)
+
+    if (
+        center_point[0] < margin or
+        center_point[0] > image.shape[1] - margin or
+        center_point[1] < margin or
+        center_point[1] > image.shape[0] - margin
+    ):
+        return (-1, -1)
+
+    # assess whether there is actually a line here
     lsf, esf, xstart, xend, ystart, yend, sub_image = get_lsf_esf(
         image,
         center_point,
@@ -357,6 +652,7 @@ def adjust_center(image, binary_image, center_point, axis, debug=False, lsf_rang
         avg_num=lsf_range,  # TODO: think about this more?
         ignore_warning=True,
     )
+
     if isinstance(esf, int) and esf == -1:
         if debug:
             print("failure to find esf/lsf on raw image")
@@ -452,5 +748,7 @@ def get_all_vertices(
 
     if show:
         display_with_points(image, vertices, display_downsample=display_downsample)
+    print("Approx points:", len(approx_points))
+    print("Final vertices:", len(vertices))
 
     return vertices

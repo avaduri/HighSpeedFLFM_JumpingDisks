@@ -20,8 +20,9 @@ current_image = None
 
 # select any specimen filmed under the calibration conditions 
 # alternatively, the calibration folder and filename can be manually specified 
-specimen = "20240506_OB_6"
-#specimen = "20250212_OB_1"
+#specimen = "20240506_OB_6"
+#specimen = "20260409_B" 
+specimen = "20260511_B"
 mm = MetadataManager(specimen)
 calibration_filename = mm.calibration_filename
 calibration_folder = mm.calibration_folder
