@@ -797,7 +797,7 @@ if __name__ == "__main__":
         # Set to False for jumping gel disks or other specimens without an ant mesh.
     USE_MESH_ALIGNMENT = False
 
-    heights = torch.linspace(-3, 3, 200, dtype=torch.float32)
+    heights = torch.linspace(-5, 5, 200, dtype=torch.float32)
     app = QtWidgets.QApplication(sys.argv)
     viewer = FrameViewer(
         # alignment_info_filenames=[
@@ -805,10 +805,10 @@ if __name__ == "__main__":
         #    "../temporary_result_storage_5/20240503_OB_3/strike_14_results.json",
         # ],
         #specimen_numbers=["20240506_OB_6"],
-        specimen_numbers = ["20260409_B"],
+        specimen_numbers = ["20260511_B"],
         heights=heights,
-        save_folder="/Users/abhin/Box/Vaduri_Abhinav Jumping Shells/Abhinav_test_data/test_outputs",
-        demo_mode=True,
+        save_folder="/Users/abhin/Box/Vaduri_Abhinav Jumping Shells/Collected_Disk_Videos/test_outputs",
+        demo_mode=False,
         use_mesh_alignment=USE_MESH_ALIGNMENT,
     )
     viewer.show()
