@@ -192,6 +192,29 @@ class SystemVertexParser:
             "vertical": lines_dict1["vertical"],
         }
 
+        # # Trying a new method
+        # pixels0 = image.shape[0]
+        # pixels1 = image.shape[1]
+
+        # # Use a single symmetric vote threshold
+        # vote_thresh = int(
+        #     threshold_values["line_thresh_per_pixel"] * min(pixels0, pixels1)
+        # )
+
+        # lines = cv2.HoughLines(
+        #     edges,
+        #     2,
+        #     np.pi / 180,
+        #     vote_thresh,
+        # )
+
+        # lines_dict = condense_lines(
+        #     lines,
+        #     r_thresh=self.calib_info_manager.expected_line_spacing / 2,
+        # )
+
+        
+
         if plane_number not in self.calib_info_manager.detected_lines:
             self.calib_info_manager.detected_lines[plane_number] = {}
         self.calib_info_manager.detected_lines[plane_number][camera_number] = lines_dict
@@ -209,6 +232,7 @@ class SystemVertexParser:
             display_with_lines(
                 image,
                 lines_thresh0.squeeze(),
+                #lines.squeeze(),
                 xlength=image.shape[1],
                 ylength=image.shape[0],
                 display_downsample=self.display_downsample,
@@ -217,6 +241,7 @@ class SystemVertexParser:
             display_with_lines(
                 image,
                 lines_thresh1.squeeze(),
+                #lines.squeeze(),
                 xlength=image.shape[1],
                 ylength=image.shape[0],
                 display_downsample=self.display_downsample,

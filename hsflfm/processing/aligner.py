@@ -170,6 +170,14 @@ save_keys = [
 # if "use_individual_base_alignment" is False, "base_alignment_values" won't be used
 # if "individual_base_alignment" is None, the values will pull from "default_individual_base_alignment"
 # and will just use the result of normal base alignment if values are not specified there
+
+# use_mesh_alignment:
+#   True  -> original ant workflow. Loads ant mesh, ant anatomical landmarks,
+#            and performs mesh-based base alignment/refinement.
+#   False -> generalized specimen workflow. Skips all ant mesh dependencies
+#            and initializes the camera-to-specimen transform as identity.
+#            Useful for jumping gel disks, where specimens are consistently
+#            sized/positioned and no anatomical mesh is available.
 class Aligner:
     def __init__(
         self,
@@ -177,21 +185,27 @@ class Aligner:
         alignment_settings={},
         base_alignment_values=None,
         use_rough_interstrike_alignment=True,
+        use_mesh_alignment=True,
     ):
-        self.mesh_filename = mesh_filename
-        self.mesh_scale = mesh_scale
-        self.M_mesh_ant = M_mesh_ant
-        self.mesh = trimesh.load(home_directory + "/" + self.mesh_filename)
+        self.use_mesh_alignment = use_mesh_alignment# See comments above, togglable in manual strike
 
         self.specimen_name = specimen_name
-
         self.data_manager = MetadataManager(specimen_number=specimen_name)
-
         self.match_points = load_dictionary(self.data_manager.match_points_filename)
-
-        alignment_points = load_dictionary(self.data_manager.alignment_points_filename)
-
         self.system = FLF_System(self.data_manager.calibration_filename)
+
+        if self.use_mesh_alignment:
+            self.mesh_filename = mesh_filename
+            self.mesh_scale = mesh_scale
+            self.M_mesh_ant = M_mesh_ant
+            self.mesh = trimesh.load(home_directory + "/" + self.mesh_filename)
+            alignment_points = load_dictionary(self.data_manager.alignment_points_filename)
+        else:
+            self.mesh_filename = None
+            self.mesh_scale = 1.0
+            self.M_mesh_ant = np.eye(4)
+            self.mesh = None
+            alignment_points = None
 
         self.alignment_settings = default_alignment_settings.copy()
         for key, value in alignment_settings.items():
@@ -201,21 +215,20 @@ class Aligner:
 
         # this should be cleaned up, but for now, we know the points are in a certain order
         # and we will keep only those
-        self.alignment_points = {}
-        features = self.alignment_settings["base_align_point_names"]
-        for cam_num, points in alignment_points.items():
-            new_points = np.zeros((len(features), 2))
-            points = np.asarray(points)
-            # j = 0
-            for i, feature_name in enumerate(key_features_ant.keys()):
-                new_idx = np.where(np.asarray(features) == feature_name)[0]
-                if len(new_idx) < 1:
-                    continue
-
-                # if feature_name in features:
-                new_points[new_idx[0]] = points[i, :2]
-                # j = j + 1
-            self.alignment_points[cam_num] = new_points
+        if self.use_mesh_alignment:
+            self.alignment_points = {}
+            features = self.alignment_settings["base_align_point_names"]
+            for cam_num, points in alignment_points.items():
+                new_points = np.zeros((len(features), 2))
+                points = np.asarray(points)
+                for i, feature_name in enumerate(key_features_ant.keys()):
+                    new_idx = np.where(np.asarray(features) == feature_name)[0]
+                    if len(new_idx) < 1:
+                        continue
+                    new_points[new_idx[0]] = points[i, :2]
+                self.alignment_points[cam_num] = new_points
+        else:
+            self.alignment_points = None
 
         # this can hold the match points from a range of videos
         # so we can theoretically track points sequentially between videos
@@ -228,8 +241,14 @@ class Aligner:
         self.stored_alignment_matrices = {}
 
         self.stable_points = None
-        self.A_cam_ant = None
-        self.ant_scale = None
+        if self.use_mesh_alignment:
+            self.A_cam_ant = None
+            self.ant_scale = None
+        else:
+            self.A_cam_ant = np.eye(4)
+            self.ant_scale = 1.0
+            self.stable_points = np.ones(len(self.match_points[0]), dtype=bool)
+            self.stored_alignment_matrices[1] = self.A_cam_ant
 
         if (
             use_rough_interstrike_alignment
@@ -259,6 +278,8 @@ class Aligner:
 
     def run_base_alignment(self):
         # location of the alignment points in camera coordinates
+        if not self.use_mesh_alignment:
+            raise RuntimeError("run_base_alignment is unavailable when use_mesh_alignment=False")
         alignment_point_cam_locs = get_point_locations(
             self.system, self.alignment_points
         )
@@ -271,6 +292,8 @@ class Aligner:
         return A_cam_to_ant, ant_scale
 
     def move_points_to_mesh(self, A_cam_ant, ant_scale, camera_points):
+        if not self.use_mesh_alignment:
+            raise RuntimeError("move_points_to_mesh is unavailable when use_mesh_alignment=False")
         A_cam_ant = A_cam_ant.copy()
         A_cam_ant[:3, 3] *= ant_scale
         camera_points = np.asarray(camera_points) * ant_scale
@@ -282,6 +305,8 @@ class Aligner:
 
     # different arguments for easier minimization
     def _move_points_to_mesh(self, vals, camera_points, from_inverse=False):
+        if not self.use_mesh_alignment:
+            raise RuntimeError("_move_points_to_mesh is unavailable when use_mesh_alignment=False")
         x, y, z, roll, pitch, yaw, scale = vals
         M = matrix_from_rot_trans(x, y, z, roll, pitch, yaw)
         if from_inverse:
@@ -547,7 +572,7 @@ class Aligner:
         self.rough_interstrike_alignment[int(strike_number)] = all_avg_diff
 
         A_cam_ant = self.stored_alignment_matrices[start_strike]
-        strike_A_cam_ant = np.linalg.matmul(A_cam_ant, A_cam2_to_cam1)
+        strike_A_cam_ant = np.matmul(A_cam_ant, A_cam2_to_cam1)
         self.stored_alignment_matrices[strike_number] = strike_A_cam_ant
 
         return (
@@ -749,10 +774,16 @@ class Aligner:
         return stable
 
     def prepare_strike_results(self, strike_number, start_strike=None, show=False):
-        if self.A_cam_ant is None or self.ant_scale is None:
-            self.run_strike1_alignment()
-        if self.stable_points is None:
-            self.determine_stable_points()
+        if self.use_mesh_alignment:
+            if self.A_cam_ant is None or self.ant_scale is None:
+                self.run_strike1_alignment()
+            if self.stable_points is None:
+                self.determine_stable_points()
+        else:
+            if 1 not in self.stored_alignment_matrices:
+                self.stored_alignment_matrices[1] = np.eye(4)
+            if self.stable_points is None:
+                self.stable_points = np.ones(len(self.match_points[0]), dtype=bool)
 
         (
             A_cam2_to_cam1,
@@ -770,7 +801,7 @@ class Aligner:
         )
 
         A_cam_ant = self.stored_alignment_matrices[start_strike]
-        strike_A_cam_ant = np.linalg.matmul(A_cam_ant, A_cam2_to_cam1)
+        strike_A_cam_ant = np.matmul(A_cam_ant, A_cam2_to_cam1)
 
         # # 2024/11/26
         # # this should be cleaned up. If strikes aren't prepared in order
@@ -778,32 +809,54 @@ class Aligner:
         # self.stored_alignment_matrices[strike_number] = strike_A_cam_ant
 
         result_dict = {
-            "mesh_filename": self.mesh_filename,
-            "mesh_scale": self.mesh_scale,
-            "M_mesh_ant": self.M_mesh_ant,
             "strike1_match_points": self.match_points,
             "match_points": strike_match_points,
-            "alignment_points": self.alignment_points,
-            "key_feature_coordinates": key_features_ant,
-            "alignment_settings": self.alignment_settings,
-            "A_cam_to_ant_start": strike_A_cam_ant,
-            "A_cam_to_ant_start_strike1": self.A_cam_ant,
-            "stable_points": self.stable_points,  # [point_numbers],
             "point_numbers": point_numbers,
             "removed_points": bad_numbers,
-            "ant_scale": self.ant_scale,
             "specimen_number": self.specimen_name,
             "strike_number": strike_number,
-            "base_alignment_values": self.base_alignment_values,
             "aligned_from_strike_number": start_strike,
             "rough_interstrike_alignment": self.rough_interstrike_alignment,
             "strike_alignment_flow_settings": self.flow_settings,
         }
 
+        if self.use_mesh_alignment:
+            result_dict.update(
+                {
+                    "mesh_filename": self.mesh_filename,
+                    "mesh_scale": self.mesh_scale,
+                    "M_mesh_ant": self.M_mesh_ant,
+                    "alignment_points": self.alignment_points,
+                    "key_feature_coordinates": key_features_ant,
+                    "alignment_settings": self.alignment_settings,
+                    "A_cam_to_ant_start": strike_A_cam_ant,
+                    "A_cam_to_ant_start_strike1": self.A_cam_ant,
+                    "stable_points": self.stable_points,
+                    "ant_scale": self.ant_scale,
+                    "base_alignment_values": self.base_alignment_values,
+                }
+            )
+        else:
+            result_dict.update(
+                {
+                    "alignment_settings": self.alignment_settings,
+                    "A_cam_to_ant_start": np.eye(4),
+                    "A_cam_to_ant_start_strike1": np.eye(4),
+                    "stable_points": self.stable_points,
+                    "ant_scale": 1.0,
+                    "base_alignment_values": None,
+                    "alignment_points": None,
+                    "key_feature_coordinates": None,
+                    "mesh_filename": None,
+                    "mesh_scale": 1.0,
+                    "M_mesh_ant": np.eye(4),
+                }
+            )
+
         for key in save_keys:
             assert key in result_dict
 
-        if show:
+        if show and self.use_mesh_alignment:
             camera_points = get_point_locations(self.system, strike_match_points)
             mesh_points = self.move_points_to_mesh(
                 strike_A_cam_ant, self.ant_scale, camera_points

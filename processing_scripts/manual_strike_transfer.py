@@ -32,7 +32,7 @@ import subprocess
 from pathlib import Path
 import json
 class FrameViewer(QtWidgets.QWidget):
-    def __init__(self, specimen_numbers, heights, save_folder, demo_mode=False):
+    def __init__(self, specimen_numbers, heights, save_folder, demo_mode=False, use_mesh_alignment=True):
         super().__init__()
         self.specimen_numbers = specimen_numbers
         self.cur_specimen_index = 0
@@ -43,6 +43,7 @@ class FrameViewer(QtWidgets.QWidget):
         self.demo_mode = demo_mode
         self.dash_proc = None
         self.mode = "view"
+        self.use_mesh_alignment = use_mesh_alignment
 
         # Load UI File
         ui_path = Path(__file__).parent / "manual_strike_transfer_gui.ui"
@@ -390,7 +391,8 @@ class FrameViewer(QtWidgets.QWidget):
                 "enforce_stiff_transform": False,
                 "enforce_self_consistency": True,
             },
-            base_alignment_values=base_alignment_values,
+            base_alignment_values= base_alignment_values,
+            use_mesh_alignment = self.use_mesh_alignment,
         )
         self.data_manager = MetadataManager(self.cur_specimen_number)
         
@@ -606,8 +608,8 @@ class FrameViewer(QtWidgets.QWidget):
             frame = self.current_frame
         shift_map = self.grid_volume[camera_number][frame]
         y_norm, x_norm = shift_map[x_vol_pix, y_vol_pix]
-        x_cam_pix = float((x_norm + 1) / 2 * self.image_shape[0])
-        y_cam_pix = float((y_norm + 1) / 2 * self.image_shape[1])
+        x_cam_pix = float((x_norm + 1) * (self.image_shape[0] - 1) / 2)
+        y_cam_pix = float((y_norm + 1) * (self.image_shape[1] - 1) / 2)
         return x_cam_pix, y_cam_pix
     def remove_point_at_position(self, x_vol_pix, y_vol_pix):
         # identify the closest point
@@ -686,7 +688,7 @@ class FrameViewer(QtWidgets.QWidget):
             self.point_numbers = self.point_numbers.astype(np.uint16)
             remove_idx = np.where(self.missing_points == self.point_number)[0][0]
             self.missing_points = np.delete(self.missing_points, remove_idx)
-            self.manual_points_numbers = np.concatenate(
+            self.manual_point_numbers = np.concatenate(
                 (self.manual_point_numbers, [self.point_number])
             )
         print("missing points: ", self.missing_points)
@@ -758,11 +760,20 @@ class FrameViewer(QtWidgets.QWidget):
         # Check if manual point transfer already begun
         has_started_manual_transfer = (len(self.manual_align_point_numbers) > 0)
         # Manual point transfer buttons
-        self.manual_button.setEnabled(not is_first_strike) 
-        self.manual_button2.setEnabled(not is_first_strike and has_started_manual_transfer) 
+        if getattr(self.aligner, "use_mesh_alignment", True):
+            self.manual_button.setEnabled(not is_first_strike)
+            self.manual_button2.setEnabled(not is_first_strike and has_started_manual_transfer)
+        else:
+            self.manual_button.setEnabled(False)
+            self.manual_button2.setEnabled(False)
+            self.rerun_button.setEnabled(False)
         # Manual alignment buttons
-        self.load_manual_alignment_button.setEnabled(is_first_strike)
-        self.open_alignment_gui_button.setEnabled(is_first_strike)
+        if getattr(self.aligner, "use_mesh_alignment", True):
+            self.load_manual_alignment_button.setEnabled(is_first_strike)
+            self.open_alignment_gui_button.setEnabled(is_first_strike)
+        else:
+            self.load_manual_alignment_button.setEnabled(False)
+            self.open_alignment_gui_button.setEnabled(False)
 
     def closeEvent(self, event):
         # Delete alignment_output.json if it exists once GUI is closed
@@ -780,6 +791,12 @@ class FrameViewer(QtWidgets.QWidget):
 
 ## Change Settings Here
 if __name__ == "__main__":
+
+    # IMPORTANT: 
+        # Set to True for ant specimens that use the anatomical mesh.
+        # Set to False for jumping gel disks or other specimens without an ant mesh.
+    USE_MESH_ALIGNMENT = False
+
     heights = torch.linspace(-3, 3, 200, dtype=torch.float32)
     app = QtWidgets.QApplication(sys.argv)
     viewer = FrameViewer(
@@ -787,13 +804,12 @@ if __name__ == "__main__":
         #    "../temporary_result_storage_5/20240503_OB_3/strike_13_results.json",
         #    "../temporary_result_storage_5/20240503_OB_3/strike_14_results.json",
         # ],
-        # specimen_numbers=["20250226_OB_2"],  # , "20240503_OB_3"],
-        # specimen_numbers=["20250429_OB_1"],
-        #specimen_numbers=["20240502_OB_2"],
-        specimen_numbers=["20240506_OB_6"],
+        #specimen_numbers=["20240506_OB_6"],
+        specimen_numbers = ["20260409_B"],
         heights=heights,
-        save_folder="/Users/abhin/Documents/Graduate School/Patek Research Docs/Ant Strike Outputs",
+        save_folder="/Users/abhin/Box/Vaduri_Abhinav Jumping Shells/Abhinav_test_data/test_outputs",
         demo_mode=True,
+        use_mesh_alignment=USE_MESH_ALIGNMENT,
     )
     viewer.show()
     sys.exit(app.exec_())
