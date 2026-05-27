@@ -1,6 +1,9 @@
-## Ultra-High Speed Fourier Light Field Mesoscope 
+## HighSpeedFLFM: Ultra-High Speed Fourier Light Field Mesoscope Processing Pipeline
 
-This will contain instructions for using the code repository associated with our new ultra-high speed fourier light field mesoscope.
+Processing and analysis pipeline for ultra-high-speed Fourier light field mesoscope (FLFM) imaging of peg-based jumping gel disks.
+
+This repository contains calibration, reconstruction, tracking, and displacement analysis workflows adapted from the original ant exoskeleton deformation pipeline.
+The original repo can be found here: https://github.com/clarebcook/HighSpeedFLFM
 
 ## Environment and Installation 
 
@@ -9,8 +12,8 @@ We recommend running this code using a conda environment. The repository and env
 1. Clone repository
 
 ```
-git clone git@github.com:clarebcook/FiLMScope.git
-cd HighSpeedFLFM
+git clone https://github.com/avaduri/HighSpeedFLFM_JumpingDisks.git
+cd HighSpeedFLFM_JumpingDisks
 ```
 
 2. Set up the environment
