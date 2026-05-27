@@ -26,3 +26,14 @@ conda develop .
 Note that using `conda develop` requires `conda-build` to be installed. This can be done with: 
 ```
 conda install conda-build
+```
+
+## Data Organization
+Specimen videos and images should be recorded in a metadata sheet and placed within a folder within the user's directory. `home_directory` in `hsflfm/config.py` should then be set to this folder. 
+
+## Quick Test
+The current pipline for visualizing results from single trials of disk deformation is as follows:
+
+1. run_calibration.ipynb (including remove_idenfitfied_vertices.py & select_alignment_points.py)
+2. match_points_gui.py
+3. process_without_alignment.ipynb
