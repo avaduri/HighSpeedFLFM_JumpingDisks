@@ -70,7 +70,7 @@ def enforce_self_consistency(match_points, system):
     return adjusted_match_points
 
 
-def get_point_flow_vector(video, point, flow_parameters, crop_size=(21, 21)):
+def get_point_flow_vector(video, point, flow_parameters, crop_size=(15, 15)):
     startx0 = int(point[0]) - int(crop_size[0] / 2)
     endx0 = startx0 + crop_size[0]
     starty0 = int(point[1]) - int(crop_size[1] / 2)
@@ -114,7 +114,7 @@ def get_point_flow_vector(video, point, flow_parameters, crop_size=(21, 21)):
 # where i just look at small sections of the videos,
 # while cropping around where the point moved in last frame
 # basically this should make better tracking for videos where the ant moves a lot
-def get_flow_vectors(videos, match_points, flow_parameters, crop_size=(21, 21)):
+def get_flow_vectors(videos, match_points, flow_parameters, crop_size=(15, 15)):
     num_cameras = len(match_points)
     num_points = len(match_points[0])
     num_frames = len(videos[0])

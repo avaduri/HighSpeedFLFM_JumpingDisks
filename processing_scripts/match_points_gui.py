@@ -1,4 +1,4 @@
-# This GUI is used to manually match points between the three multi-perspective images
+# This GUI is used to manually match points between the  multi-perspective images
 # 2024/11/12
 # more cleaning needs to be done before this should be used as more than a demo script
 
@@ -17,10 +17,14 @@ import numpy as np
 import qtpy.QtWidgets as QtWidgets
 import qtpy.QtGui as QtGui
 from qtpy.QtCore import Qt
+from hsflfm.util import load_image_set
 
 # specify specimen name
 # specimen_number = "20240506_OB_6"
-specimen_number = "20260511_B"
+# specimen_number = "20260528_B"
+# specimen_number = "20260602_B_1"
+specimen_number = "20260602_C_1"
+
 data_manager = MetadataManager(specimen_number=specimen_number)
 
 # specify if we're selecting alignment points or paint dots
@@ -64,10 +68,12 @@ image_shape = info_manager.image_shape
 if point_type == "alignment":
     images = data_manager.light_calibration_images
 elif point_type == "paint":
+    #filename = home_directory + "/Collected_Disk_Videos/20260511_B/20260511_10_0.tiff"
+    #images = load_image_set(filename, calibration_filename)
     images = data_manager.get_start_images(strike_number=1)
 
 # Define height range
-heights = torch.linspace(-3, 3, 200, dtype=torch.float32)
+heights = torch.linspace(-6, 6, 201, dtype=torch.float32)
 
 # Generate the volume using the simplified, modular approach
 volume, grids = generate_ss_volume(
