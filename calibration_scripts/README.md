@@ -1,5 +1,6 @@
 ## Setting up metadata 
 Information needs to be added on how information is stored and loaded. 
+Prior to calibration, ensure steps in the base folder README have been followed to correctly set up environment and data organization.
 
 ## Camera calibration 
 Calibration is completed by following the prompts in `run_calibration.ipynb`. Two steps in the process require the user to manually select points from images, which is done in a GUI by running `remove_identified_vertices.py` and `select_alignment_points.py`. The notebook will indicate at what point this needs to be completed, and allow the user to use example data to skip those steps.
@@ -9,8 +10,3 @@ Depending on lighting conditions or the precise graph target being used, some se
 When selecting ``threshold_values``, the user should ensure that all graph lines in the image are identified. While effort should be made to reduce the number of falsely identified lines, having a small number of these should not significantly impact the outcome. 
 
 The end result of this process is a single file, ``calibration_information``, which by default will be stored in the same folder as the calibration information. This is the information needed to proceed with 3D analysis. 
-
-
-## Specimen alignment
-
-run ``match_points_gui.py`` for "paint" and "alignment" points. More information will be added on this later.  
