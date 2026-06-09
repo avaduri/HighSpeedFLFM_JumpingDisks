@@ -23,7 +23,7 @@ from hsflfm.util import load_image_set
 # specimen_number = "20240506_OB_6"
 # specimen_number = "20260528_B"
 # specimen_number = "20260602_B_1"
-specimen_number = "20260602_C_1"
+specimen_number = "20260602_C_2"
 
 data_manager = MetadataManager(specimen_number=specimen_number)
 
