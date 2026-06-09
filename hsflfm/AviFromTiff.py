@@ -3,6 +3,9 @@ import cv2
 import os
 from pathlib import Path
 
+
+# Useful script when perfornming manual translation, turns a series of tiffs into an avi for the pipeline
+
 # -------------------------
 # Settings
 # -------------------------
