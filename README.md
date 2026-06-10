@@ -34,7 +34,7 @@ Specimen videos and images should be recorded in a metadata sheet and placed wit
 ## Quick Test
 The current pipline for visualizing results from single trials of disk deformation is as follows:
 
-1. run_calibration.ipynb (including remove_idenfitfied_vertices.py & select_alignment_points.py)
+1. run_calibration.ipynb (including remove_identified_vertices.py & select_alignment_points.py)
 2. match_points_gui.py
 3. process_without_alignment.ipynb
 
