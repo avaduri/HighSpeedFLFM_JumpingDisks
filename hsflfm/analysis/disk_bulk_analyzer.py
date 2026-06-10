@@ -181,100 +181,6 @@ class DiskBulkAnalyzer:
         print(f"Saved animation to: {save_path}")
         return save_path
 
-
-    def animate_z_heatmap(
-        self,
-        specimen_number,
-        strike_number=None,
-        save_path=None,
-        fps=10,
-        invert_z=True,
-    ):
-        import numpy as np
-        import matplotlib.pyplot as plt
-        from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
-        from pathlib import Path
-
-        matches = [
-            r for r in self.results
-            if r.get("specimen_number") == specimen_number
-            and (strike_number is None or int(r.get("strike_number")) == int(strike_number))
-        ]
-
-        if len(matches) == 0:
-            print(f"No result found for specimen {specimen_number}")
-            return
-
-        result = matches[0]
-
-        start_locations = np.asarray(result["camera_start_locations"], dtype=float)
-        displacements = np.asarray(result["camera_point_displacements"], dtype=float)
-
-        x0 = start_locations[:, 0]
-        y0 = start_locations[:, 1]
-
-        z_disp = displacements[:, :, 2]
-
-        if invert_z:
-            z_disp = -z_disp
-
-        num_points, num_frames = z_disp.shape
-
-        vmax = np.nanmax(np.abs(z_disp))
-        vmin = -vmax
-
-        if save_path is None:
-            save_path = self.result_folder / f"{specimen_number}_strike_{int(result['strike_number'])}_z_heatmap.mp4"
-        else:
-            save_path = Path(save_path)
-
-        fig, ax = plt.subplots()
-
-        scat = ax.scatter(
-            x0,
-            y0,
-            c=z_disp[:, 0],
-            s=80,
-            vmin=vmin,
-            vmax=vmax,
-            cmap="coolwarm",
-        )
-
-        cbar = fig.colorbar(scat, ax=ax)
-        cbar.set_label("Physical Z displacement")
-
-        ax.set_xlabel("X position")
-        ax.set_ylabel("Y position")
-        ax.set_aspect("equal", adjustable="box")
-
-        def update(frame):
-            scat.set_array(z_disp[:, frame])
-            ax.set_title(
-                f"{specimen_number} | Strike {int(result['strike_number'])} | "
-                f"Frame {frame + 1}/{num_frames}"
-            )
-            return scat,
-
-        anim = FuncAnimation(
-            fig,
-            update,
-            frames=num_frames,
-            interval=1000 / fps,
-            blit=False,
-        )
-
-        try:
-            writer = FFMpegWriter(fps=fps)
-            anim.save(save_path, writer=writer)
-        except Exception:
-            save_path = save_path.with_suffix(".gif")
-            writer = PillowWriter(fps=fps)
-            anim.save(save_path, writer=writer)
-
-        plt.close(fig)
-
-        print(f"Saved heatmap animation to: {save_path}")
-        return save_path
     
     def animate_vector_field(
         self,
@@ -561,3 +467,191 @@ class DiskBulkAnalyzer:
 
         print(f"Saved vector overlay animation to: {save_path}")
         return save_path
+
+    def _animate_derived_vector_field(
+        self,
+        specimen_number,
+        strike_number=None,
+        save_path=None,
+        fps=10,
+        dt=1.0,
+        invert_z=True,
+        arrow_scale=1.0,
+        quantity="velocity",
+    ):
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
+        from pathlib import Path
+
+        matches = [
+            r for r in self.results
+            if r.get("specimen_number") == specimen_number
+            and (strike_number is None or int(r.get("strike_number")) == int(strike_number))
+        ]
+
+        if len(matches) == 0:
+            print(f"No result found for specimen {specimen_number}")
+            return
+
+        result = matches[0]
+
+        start_locations = np.asarray(result["camera_start_locations"], dtype=float)
+        displacements = np.asarray(result["camera_point_displacements"], dtype=float)
+
+        if quantity == "velocity":
+            vectors = np.gradient(displacements, dt, axis=1)
+            label = "Velocity"
+            suffix = "velocity_vector_field"
+        elif quantity == "acceleration":
+            velocity = np.gradient(displacements, dt, axis=1)
+            vectors = np.gradient(velocity, dt, axis=1)
+            label = "Acceleration"
+            suffix = "acceleration_vector_field"
+        else:
+            raise ValueError("quantity must be 'velocity' or 'acceleration'")
+
+        x0 = start_locations[:, 0]
+        y0 = start_locations[:, 1]
+
+        dx = vectors[:, :, 0]
+        dy = vectors[:, :, 1]
+        dz = vectors[:, :, 2]
+
+        if invert_z:
+            dz = -dz
+
+        num_points, num_frames = dz.shape
+
+        vmax = np.nanmax(np.abs(dz))
+        if vmax == 0:
+            vmax = 1
+
+        if save_path is None:
+            save_path = (
+                self.result_folder
+                / f"{specimen_number}_strike_{int(result['strike_number'])}_{suffix}.mp4"
+            )
+        else:
+            save_path = Path(save_path)
+
+        fig, ax = plt.subplots()
+
+        q = ax.quiver(
+            x0,
+            y0,
+            dx[:, 0] * arrow_scale,
+            dy[:, 0] * arrow_scale,
+            dz[:, 0],
+            cmap="coolwarm",
+            clim=(-vmax, vmax),
+            angles="xy",
+            scale_units="xy",
+            scale=1,
+        )
+
+        cbar = fig.colorbar(q, ax=ax)
+        cbar.set_label(f"Physical Z {label.lower()}")
+
+        ax.scatter(x0, y0, s=20)
+
+        pad = 0.2 * max(np.ptp(x0), np.ptp(y0), 1e-6)
+        ax.set_xlim(x0.min() - pad, x0.max() + pad)
+        ax.set_ylim(y0.min() - pad, y0.max() + pad)
+
+        ax.set_aspect("equal", adjustable="box")
+        ax.set_xlabel("X position")
+        ax.set_ylabel("Y position")
+
+        def update(frame):
+            q.set_UVC(
+                dx[:, frame] * arrow_scale,
+                dy[:, frame] * arrow_scale,
+                dz[:, frame],
+            )
+
+            ax.set_title(
+                f"{specimen_number} | Strike {int(result['strike_number'])} | "
+                f"{label} | Frame {frame + 1}/{num_frames}"
+            )
+
+            return q,
+
+        anim = FuncAnimation(
+            fig,
+            update,
+            frames=num_frames,
+            interval=1000 / fps,
+            blit=False,
+        )
+
+        try:
+            writer = FFMpegWriter(fps=fps)
+            anim.save(save_path, writer=writer)
+        except Exception:
+            save_path = save_path.with_suffix(".gif")
+            writer = PillowWriter(fps=fps)
+            anim.save(save_path, writer=writer)
+
+        plt.close(fig)
+
+        print(f"Saved {label.lower()} vector field animation to: {save_path}")
+        return save_path
+
+
+    def animate_velocity_vector_field(
+        self,
+        specimen_number,
+        strike_number=None,
+        frame_rate=None,
+        save_path=None,
+        fps=10,
+        dt=1.0,
+        invert_z=True,
+        arrow_scale=1.0,
+    ):
+        if frame_rate is None:
+            print("Please provide frame_rate in frames per second.")
+            return
+
+        dt = 1 / frame_rate
+
+        return self._animate_derived_vector_field(
+            specimen_number=specimen_number,
+            strike_number=strike_number,
+            save_path=save_path,
+            fps=fps,
+            dt=dt,
+            invert_z=invert_z,
+            arrow_scale=arrow_scale,
+            quantity="velocity",
+        )
+
+
+    def animate_acceleration_vector_field(
+        self,
+        specimen_number,
+        strike_number=None,
+        frame_rate=None,
+        save_path=None,
+        fps=10,
+        dt=1.0,
+        invert_z=True,
+        arrow_scale=1.0,
+    ):
+        if frame_rate is None:
+            print("Please provide frame_rate in frames per second.")
+            return
+
+        dt = 1 / frame_rate
+        
+        return self._animate_derived_vector_field(
+            specimen_number=specimen_number,
+            strike_number=strike_number,
+            save_path=save_path,
+            fps=fps,
+            dt=dt,
+            invert_z=invert_z,
+            arrow_scale=arrow_scale,
+            quantity="acceleration",
+        )
