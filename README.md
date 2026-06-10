@@ -31,6 +31,8 @@ conda install conda-build
 ## Data Organization
 Specimen videos and images should be recorded in a metadata sheet and placed within a folder within the user's directory. `home_directory` in `hsflfm/config.py` should then be set to this folder. 
 
+The user facing files can be found in the calibration_scripts, analysis_scripts, and processing_scripts with some end results available in processed_results for testing. hsflfm contains all of scripts run in the background for each of these folders. analysis_example_scripts is a legacy folder from the ant project and just here as an example for future analysis scripts. 
+
 ## Quick Test
 The current pipline for visualizing results from single trials of disk deformation is as follows:
 
